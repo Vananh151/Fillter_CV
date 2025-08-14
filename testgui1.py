@@ -5,7 +5,23 @@
 # - Ước lượng kinh nghiệm (year ranges + simple years)
 # - OCR (pdf scan / ảnh) bằng pytesseract fallback
 # - So khớp nội dung JD theo dòng + highlight các skill trùng
+# Mở thư mục chứa file testgui1.py
+cd /path/to/your/project
 
+# Khởi tạo Git repo
+git init
+
+# Thêm toàn bộ file vào repo
+git add testgui1.py requirements.txt
+
+# Commit lần đầu
+git commit -m "Initial commit for CV Filter Streamlit app"
+
+# Kết nối tới GitHub repo vừa tạo
+git remote add origin https://github.com/<username>/cv-filter-streamlit.git
+
+# Push code lên GitHub
+git push -u origin main
 import streamlit as st
 import io, os, re, json, uuid, unicodedata, math
 from typing import List, Dict, Any, Tuple
@@ -598,3 +614,4 @@ st.sidebar.markdown(
     "**Gợi ý:** Nếu dữ liệu cực lớn (hàng chục nghìn CV), hãy build chỉ mục FAISS cho embeddings CV,\n"
     "tìm top-k gần JD trước rồi mới chấm điểm chi tiết để tăng tốc. FAISS tăng tốc — không thay đổi độ chính xác."
 )
+
