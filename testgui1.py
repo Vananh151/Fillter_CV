@@ -13,7 +13,7 @@ git init
 
 # Thêm toàn bộ file vào repo
 git add testgui1.py requirements.txt
-
+git add testgui1.py packages.txt
 # Commit lần đầu
 git commit -m "Initial commit for CV Filter Streamlit app"
 
@@ -614,4 +614,5 @@ st.sidebar.markdown(
     "**Gợi ý:** Nếu dữ liệu cực lớn (hàng chục nghìn CV), hãy build chỉ mục FAISS cho embeddings CV,\n"
     "tìm top-k gần JD trước rồi mới chấm điểm chi tiết để tăng tốc. FAISS tăng tốc — không thay đổi độ chính xác."
 )
+
 
