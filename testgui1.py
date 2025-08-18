@@ -10,6 +10,7 @@ import streamlit as st
 import io, os, re, json, uuid, unicodedata, math
 from typing import List, Dict, Any, Tuple
 from PIL import Image
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 import pdfplumber
 from docx import Document
 from dotenv import load_dotenv
@@ -19,6 +20,7 @@ from datetime import datetime
 import re
 import spacy
 from typing import List, Dict, Any
+import base64
 # embeddings
 try:
     from sentence_transformers import SentenceTransformer, util
@@ -28,16 +30,7 @@ except Exception:
     SentenceTransformer = None
     util = None
     CrossEncoder = None
-import streamlit as st
-import spacy
 
-# --- Load spaCy Vietnamese model ---
-try:
-    nlp = spacy.load("vi_core_news_sm")
-except OSError:
-    from spacy.cli import download
-    download("vi_core_news_sm")
-    nlp = spacy.load("vi_core_news_sm")
 # --- Cấu hình Tesseract (điều chỉnh theo máy của bạn) ---
 # Nếu path khác, bạn có thể comment / set biến môi trường
 pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
@@ -641,8 +634,48 @@ if results:
         })
 
     df = pd.DataFrame(data)
-    st.dataframe(df, use_container_width=True)
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_selection(selection_mode="single", use_checkbox=False)
+    gb.configure_columns(["Candidate"], 
+                        cellRenderer='''function(params){return `<b style="color:blue;cursor:pointer">${params.value}</b>`}''')
+    gridOptions = gb.build()
 
+    grid_response = AgGrid(
+        df,
+        gridOptions=gridOptions,
+        update_mode=GridUpdateMode.SELECTION_CHANGED,
+        allow_unsafe_jscode=True,
+    )
+
+    # Lấy file CV từ session_state.candidates khi click tên
+    selected_rows = grid_response.get("selected_rows", [])
+    if hasattr(selected_rows, "to_dict"):
+        selected_rows = selected_rows.to_dict("records")
+
+    if selected_rows:
+        selected = selected_rows[0]
+        filename = selected["Candidate"]
+        st.write(f"**Selected Candidate:** {filename}")
+
+        cv_entry = next((c for c in st.session_state.candidates if c["filename"] == filename), None)
+        if cv_entry:
+            ext = filename.split(".")[-1].lower()
+            content = cv_entry["bytes"]
+
+            if ext == "pdf":
+                # Hiển thị PDF trực tiếp
+                b64 = base64.b64encode(content).decode()
+                pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+            elif ext in ("docx", "doc"):
+                # Hiển thị text trích xuất từ DOC/DOCX
+                st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
+            elif ext in ("png", "jpg", "jpeg"):
+                st.image(content, caption=filename)
+            else:
+                st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
+        else:
+            st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
     # Download results CSV
     csv_buf = StringIO()
     writer = csv.writer(csv_buf)
@@ -673,30 +706,78 @@ if results:
     if valid_results:
         st.markdown(f"### ✅ Top CV hợp lệ — {len(valid_results)} ứng viên")
 
-        valid_data = []
-        for r in valid_results:
-            s = r["score"]
-            valid_data.append({
-                "Candidate": r["filename"],
-                "Total": s.get("total_score", 0),
-                "Semantic": s.get("semantic_score", 0),
-                "JD Match %": f"{s['parsed'].get('jd_match_ratio',0.0)*100:.1f}%",
-                "Exp (years)": s.get("exp_years_estimated", 0),
-                "Email": ";".join(s["parsed"].get("emails", [])[:1]),
-            })
+    # Chuẩn bị dữ liệu cho bảng
+    valid_data = []
+    for r in valid_results:
+        s = r["score"]
+        valid_data.append({
+            "Candidate": r["filename"],
+            "Total": s.get("total_score", 0),
+            "Semantic": s.get("semantic_score", 0),
+            "JD Match %": f"{s['parsed'].get('jd_match_ratio',0.0)*100:.1f}%",
+            "Exp (years)": s.get("exp_years_estimated", 0),
+            "Email": ";".join(s["parsed"].get("emails", [])[:1]),
+        })
 
-        df_valid = pd.DataFrame(valid_data)
-        st.dataframe(df_valid, use_container_width=True)
+    df_valid = pd.DataFrame(valid_data)
 
-        # Export TXT danh sách hợp lệ
-        csv_buf = io.StringIO()
-        df_valid.to_csv(csv_buf, index=False, encoding="utf-8-sig")
-        st.download_button(
-            "📥 Download danh sách hợp lệ (.csv)",
-            data=csv_buf.getvalue(),
-            file_name="top_cv_hople.csv",
-            mime="text/csv"
-        )
-    else:
-        st.warning("Không có CV nào hợp lệ ")
+    # Cấu hình bảng với AgGrid
+    gb = GridOptionsBuilder.from_dataframe(df_valid)
+    gb.configure_selection(selection_mode="single", use_checkbox=False)
+    gb.configure_columns(["Candidate"],
+                         cellRenderer='''function(params){return `<b style="color:blue;cursor:pointer">${params.value}</b>`}''')
+    gridOptions = gb.build()
 
+    grid_response = AgGrid(
+        df_valid,
+        gridOptions=gridOptions,
+        update_mode=GridUpdateMode.SELECTION_CHANGED,
+        allow_unsafe_jscode=True,
+    )
+
+    # Lấy row được chọn
+    selected_rows = grid_response.get("selected_rows", [])
+    if hasattr(selected_rows, "to_dict"):
+        selected_rows = selected_rows.to_dict("records")
+
+    if selected_rows:
+        selected = selected_rows[0]
+        filename = selected["Candidate"]
+
+        # Lấy CV từ session_state
+        cv_entry = next((c for c in st.session_state.candidates if c["filename"] == filename), None)
+        if cv_entry:
+            ext = filename.split(".")[-1].lower()
+            content = cv_entry["bytes"]
+
+            st.markdown(f"**Hiển thị CV: {filename}**")
+
+            if ext == "pdf":
+                b64 = base64.b64encode(content).decode()
+                pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
+
+            elif ext in ("png", "jpg", "jpeg"):
+                st.image(content, caption=filename, use_column_width=True)
+
+            elif ext in ("docx", "doc"):
+                # Hiển thị text trích xuất từ DOC/DOCX
+                st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
+
+            else:
+                st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
+        else:
+            st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
+
+    # Export CSV danh sách hợp lệ
+    csv_buf = io.StringIO()
+    df_valid.to_csv(csv_buf, index=False, encoding="utf-8-sig")
+    st.download_button(
+        "📥 Download danh sách hợp lệ (.csv)",
+        data=csv_buf.getvalue(),
+        file_name="top_cv_hople.csv",
+        mime="text/csv"
+    )
+
+else:
+    st.warning("Không có CV nào hợp lệ")
