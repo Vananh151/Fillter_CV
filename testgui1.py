@@ -28,7 +28,16 @@ except Exception:
     SentenceTransformer = None
     util = None
     CrossEncoder = None
+import streamlit as st
+import spacy
 
+# --- Load spaCy Vietnamese model ---
+try:
+    nlp = spacy.load("vi_core_news_sm")
+except OSError:
+    from spacy.cli import download
+    download("vi_core_news_sm")
+    nlp = spacy.load("vi_core_news_sm")
 # --- Cấu hình Tesseract (điều chỉnh theo máy của bạn) ---
 # Nếu path khác, bạn có thể comment / set biến môi trường
 pytesseract.pytesseract.tesseract_cmd = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
@@ -690,3 +699,4 @@ if results:
         )
     else:
         st.warning("Không có CV nào hợp lệ ")
+
