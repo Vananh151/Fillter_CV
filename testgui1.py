@@ -5,23 +5,7 @@
 # - Ước lượng kinh nghiệm (year ranges + simple years)
 # - OCR (pdf scan / ảnh) bằng pytesseract fallback
 # - So khớp nội dung JD theo dòng + highlight các skill trùng
-# Mở thư mục chứa file testgui1.py
-cd /path/to/your/project
 
-# Khởi tạo Git repo
-git init
-
-# Thêm toàn bộ file vào repo
-git add testgui1.py requirements.txt
-git add testgui1.py packages.txt
-# Commit lần đầu
-git commit -m "Initial commit for CV Filter Streamlit app"
-
-# Kết nối tới GitHub repo vừa tạo
-git remote add origin https://github.com/<username>/cv-filter-streamlit.git
-
-# Push code lên GitHub
-git push -u origin main
 import streamlit as st
 import io, os, re, json, uuid, unicodedata, math
 from typing import List, Dict, Any, Tuple
@@ -32,7 +16,9 @@ from dotenv import load_dotenv
 import pytesseract
 import numpy as np
 from datetime import datetime
-
+import re
+import spacy
+from typing import List, Dict, Any
 # embeddings
 try:
     from sentence_transformers import SentenceTransformer, util
@@ -151,13 +137,14 @@ def preprocess_multilang(text: str) -> List[str]:
     return processed
 
 def compare_cv_to_jd_content(cv_text: str, jd_text: str) -> List[Dict[str, Any]]:
-    """So khớp từng dòng CV với toàn bộ nội dung JD (đa ngôn ngữ)."""
-    jd_tokens = set(preprocess_multilang(jd_text))
+    """So khớp từng dòng CV với các từ khóa quan trọng trong JD."""
+    jd_tokens = set(extract_keywords(jd_text))
     results = []
     if not jd_tokens:
         return results
+
     for line in (cv_text or "").splitlines():
-        line_tokens = set(preprocess_multilang(line))
+        line_tokens = set(extract_keywords(line))
         matched = jd_tokens & line_tokens
         match_ratio = len(matched) / max(1, len(jd_tokens))
         results.append({
@@ -226,6 +213,7 @@ SYNONYMS = {
     "ts": "typescript",
     "sql server": "sql",
     "postgres": "postgresql",
+    "more": ">"
 }
 
 def normalize_skill(s: str) -> str:
@@ -247,12 +235,13 @@ def merge_year_ranges(ranges: List[Tuple[int, int]]) -> int:
     return sum(end - start for start, end in merged)
 
 # --- Parse thông tin cấu trúc từ CV (mở rộng: nhận JD + skill lists) ---
-JD_MATCH_THRESHOLD = 0.8
+JD_MATCH_THRESHOLD = 0.5
 def parse_structured_info(text: str, jd_text: str, must_have_skills: list, nice_to_have_skills: list) -> dict:
     parsed = {}
     emails = EMAIL_RE.findall(text or "")
     phones = PHONE_RE.findall(text or "")
 
+    # --- tìm năm kinh nghiệm ---
     years_simple = YEARS_RE_SIMPLE.findall(text or "") or []
     years_simple = [int(y) for y in years_simple if str(y).isdigit()]
 
@@ -280,43 +269,116 @@ def parse_structured_info(text: str, jd_text: str, must_have_skills: list, nice_
     parsed["years_mentioned"] = years_simple
     parsed["estimated_experience_years"] = est_years
 
-    # Tokens and skill matching
+    # --- Tokens và skill matching ---
     cv_tokens = set(preprocess_multilang(text or ""))
     must_tokens = set(preprocess_multilang(" ".join(must_have_skills)))
     nice_tokens = set(preprocess_multilang(" ".join(nice_to_have_skills)))
-    jd_tokens = set(preprocess_multilang(jd_text or ""))
 
     parsed["must_hit_tokens"] = sorted(must_tokens & cv_tokens)
     parsed["nice_hit_tokens"] = sorted(nice_tokens & cv_tokens)
     parsed["missing_must_tokens"] = sorted(must_tokens - cv_tokens)
 
-    # JD content match ratio (overall tokens)
-    parsed["jd_match_ratio"] = round(len(jd_tokens & cv_tokens) / max(1, len(jd_tokens)), 3) if jd_tokens else 0.0
-    parsed["is_jd_match"] = parsed["jd_match_ratio"] >= JD_MATCH_THRESHOLD
+    # --- JD content match (chỉ tập trung vào skills trong JD) ---
+    jd_match_tokens = must_tokens | nice_tokens
+    overlap = jd_match_tokens & cv_tokens
+    parsed["jd_match_ratio"] = round(len(overlap) / max(1, len(jd_match_tokens)), 3)
+
+    # JD match = phải có đủ must-have + đạt tỷ lệ threshold
     parsed["is_skill_match"] = len(parsed["missing_must_tokens"]) == 0
+    parsed["is_jd_match"] = parsed["is_skill_match"] and parsed["jd_match_ratio"] >= JD_MATCH_THRESHOLD
 
     return parsed
+# >>> NEW: JD years extraction (regex + optional spaCy NER)
+@st.cache_resource(show_spinner=False)
+def _load_spacy():
+    try:
+        return spacy.load("en_core_web_sm")
+    except Exception:
+        return None
+
+_nlp = _load_spacy()
+
+_JD_YEARS_PATTERNS = [
+    # at least X years
+    r"(?:at\s+least|minimum|min\.?|tối\s+thiểu|ít\s+nhất)\s*(\d+)\s*\+?\s*(?:year|years|năm)",
+    
+    # X years of experience
+    r"(\d+)\s*\+?\s*(?:year|years|năm)\s*(?:of)?\s*(?:experience|kinh\s+nghiệm)",
+    
+    # X years exp
+    r"(\d+)\s*(?:year|years|năm)\s*(?:exp\.?|experience)",
+    
+    # X+ years
+    r"(\d+)\s*\+\s*(?:years|năm)",
+    
+    # more than X years
+    r"(?:hơn\s*|more than\s*|over\s*)?(\d+)\+?\s*(?:year|years|năm)"
+]
+
+def extract_keywords(text: str) -> List[str]:
+    """Tách từ khóa quan trọng (skill, title, requirement) từ JD."""
+    tokens = preprocess_multilang(text)
+    stopwords = {"and", "or", "with", "the", "a", "an", "of", "to", "in", "for", "on", 
+                 "at", "với", "có", "là", "của", "trong", "và", "hoặc"}  # thêm stopwords đa ngôn ngữ
+    keywords = [t for t in tokens if t not in stopwords and len(t) > 2]
+    return list(set(keywords))
+def extract_min_years_from_jd(jd_text: str) -> int:
+    """Ưu tiên regex, fallback NER (tìm số gần 'year/years'). Trả về 0 nếu không thấy."""
+    text = jd_text or ""
+    for pat in _JD_YEARS_PATTERNS:
+        m = re.search(pat, text, flags=re.I)
+        if m:
+            try:
+                return int(m.group(1))
+            except:
+                pass
+
+    # Fallback NER: tìm token 'year/years' và số ở gần
+    if _nlp is not None:
+        try:
+            doc = _nlp(text)
+            toks = list(doc)
+            for i, t in enumerate(toks):
+                if t.lower_ in ("year", "years", "năm"):
+                    for j in range(max(0, i-3), i+1):
+                        if toks[j].like_num:
+                            try:
+                                return int(toks[j].text)
+                            except:
+                                continue
+        except Exception:
+            pass
+    return 0
 
 # --- Tính semantic similarity với chunk ---
-def semantic_similarity(cv_text: str, jd_text: str, use_chunks: bool = True, max_chunks: int = 12) -> float:
+def semantic_similarity(cv_text: str, jd_text: str, use_chunks: bool = True, max_chunks: int = 12, top_k: int = 3) -> float:
     if embedder is None or util is None:
         return 0.0
+
     if not use_chunks:
         emb_cv = embedder.encode(cv_text or "", convert_to_tensor=True)
         emb_jd = embedder.encode(jd_text or "", convert_to_tensor=True)
         sem_sim = float(util.cos_sim(emb_cv, emb_jd).item())
-        return (sem_sim + 1) / 2
+        return max(0.0, min(1.0, sem_sim))  # cosine đã ở [-1,1], clamp về [0,1]
 
     chunks = chunk_text(cv_text or "", max_chunks=max_chunks)
     jd_emb = embedder.encode(jd_text or "", convert_to_tensor=True)
+
     sims = []
     for ch in chunks:
         emb = embedder.encode(ch, convert_to_tensor=True)
         sims.append(float(util.cos_sim(emb, jd_emb).item()))
+
     if not sims:
         return 0.0
-    max_sim = max(sims)  # max-over-chunks
-    return (max_sim + 1) / 2
+
+    # Lấy trung bình top-k chunk thay vì chỉ max
+    sims = sorted(sims, reverse=True)[:top_k]
+    avg_sim = sum(sims) / len(sims)
+
+    # Clamp kết quả về [0,1]
+    return max(0.0, min(1.0, avg_sim))
+
 
 # --- (Tùy chọn) Rerank Cross-Encoder ---
 def cross_encoder_score(cv_text: str, jd_text: str, enabled: bool, max_chunks: int = 6) -> float:
@@ -376,9 +438,15 @@ def score_candidate(cv_text: str, jd: dict, cfg: dict) -> dict:
 
     # Experience
     exp_years = parsed.get("estimated_experience_years", 0)
-    min_exp = int(jd.get("min_experience_years", 0) or 0)
-    exp_score = 1.0 if exp_years >= min_exp else (exp_years / max(1, min_exp)) if min_exp > 0 else 1.0
+    min_exp = float(jd.get("min_experience_years", 0) or 0)
 
+    # So sánh chính xác
+    if min_exp <= 0:
+        exp_score = 1.0
+        exp_match = True
+    else:
+        exp_score = min(exp_years / min_exp, 1.0)  # tỉ lệ không vượt quá 1
+        exp_match = exp_years >= min_exp
     # Combine weights
     w_kw, w_sem, w_exp = cfg.get("w_kw", 0.35), cfg.get("w_sem", 0.45), cfg.get("w_exp", 0.2)
     w_sum = max(1e-6, w_kw + w_sem + w_exp)
@@ -387,7 +455,7 @@ def score_candidate(cv_text: str, jd: dict, cfg: dict) -> dict:
 
     # penalty when missing must-have
     if missing_must_tokens:
-        total *= cfg.get("missing_must_penalty", 0.6)
+        total *= cfg.get("missing_must_penalty", 0.8)
 
     # top content matches (per-line)
     content_matches = compare_cv_to_jd_content(cv_text or "", jd.get("content", "") or "")
@@ -406,6 +474,8 @@ def score_candidate(cv_text: str, jd: dict, cfg: dict) -> dict:
         "hits": sorted(list(must_hit_tokens | nice_hit_tokens)),
         "missing_must": missing_must_tokens,
         "content_top_matches": top_content_matches,
+        "exp_required": min_exp,           
+        "exp_match": exp_match, 
     }
 
 # ---------------------
@@ -417,31 +487,45 @@ st.markdown("Upload JD và nhiều CV, hệ thống sẽ parse & **xếp hạng*
 with st.sidebar:
     st.header("Job Description (JD)")
     jd_content = st.text_area("JD content", "")
-    min_ex = st.number_input("Min experience (years)", min_value=0, max_value=50, value=2)
-    must_raw = st.text_input("Must-have skills (comma)", "")
-    nice_raw = st.text_input("Nice-to-have skills (comma)", "")
+    if jd_content:
+        # >>> NEW: dùng extractor chuẩn
+        min_ex = extract_min_years_from_jd(jd_content)
+        # 2. Tách skills
+        must_have_skills = []
+        nice_to_have_skills = []
+        jd_lower = jd_content.lower()
+
+        for skill in DEFAULT_COMMON_SKILLS:
+            if skill in jd_lower:
+                # nếu xuất hiện gần từ "must have", "yêu cầu", "required"
+                if re.search(r"(must have|required|bắt buộc|yêu cầu).*" + skill, jd_lower):
+                    must_have_skills.append(skill)
+                # nếu xuất hiện gần từ "ưu tiên", "nice to have", "plus"
+                elif re.search(r"(nice to have|ưu tiên|plus).*" + skill, jd_lower):
+                    nice_to_have_skills.append(skill)
+                else:
+                    must_have_skills.append(skill)  # mặc định là must
+
+    else:
+        min_ex = 0
+        must_have_skills = []
+        nice_to_have_skills = []
 
     st.markdown("---")
-    st.subheader("Scoring Weights")
     w_kw = st.slider("Weight: Keyword skills", 0.0, 1.0, 0.35, 0.05)
     w_sem = st.slider("Weight: Semantic", 0.0, 1.0, 0.45, 0.05)
     w_exp = st.slider("Weight: Experience", 0.0, 1.0, 0.20, 0.05)
 
     st.markdown("---")
-    st.subheader("Semantic Options")
     use_chunks = st.checkbox("Use chunked semantic (recommended)", value=True)
     max_chunks = st.slider("Max chunks per CV", 1, 24, 12)
-    use_ce = st.checkbox("Rerank with Cross-Encoder (if available)", value=False, help="Cần tải model lần đầu")
+    use_ce = st.checkbox("Rerank with Cross-Encoder (if available)", value=False)
 
     st.markdown("---")
-    THRESHOLD = st.slider("Pass threshold (total score)", 0.0, 1.0, 0.55, 0.01)
-    penalty = st.slider("Penalty when missing must-have (multiplier)", 0.2, 1.0, 0.6, 0.05)
+    THRESHOLD = st.slider("Pass threshold", 0.0, 1.0, 0.55, 0.01)
+    penalty = st.slider("Penalty when missing must-have", 0.5, 1.0, 0.8, 0.05)
 
     run_button = st.button("▶️ Run matching")
-
-must_have_skills = [s.strip() for s in must_raw.split(",") if s.strip()]
-nice_to_have_skills = [s.strip() for s in nice_raw.split(",") if s.strip()]
-
 uploaded_files = st.file_uploader(
     "Upload CV (PDF, DOCX, JPG, PNG) — chọn nhiều file",
     type=["pdf","docx","doc","png","jpg","jpeg"],
@@ -518,73 +602,57 @@ if run_button:
         st.success(f"Done — {len(st.session_state.results)} CVs scored.")
 
 # Show results table
+# import pandas as pd
+import json
+import csv
+from io import StringIO
+import pandas as pd
 results = st.session_state.get("results", [])
 if results:
     st.subheader("Top candidates")
-    # Header
-    cols = st.columns((4,1,1,1))
-    cols[0].markdown("**Candidate**")
-    cols[1].markdown("**Total**")
-    cols[2].markdown("**Semantic**")
-    cols[3].markdown("**JD Match %**")
 
+    # Chuẩn bị dữ liệu cho bảng
+    data = []
     for r in results:
-        c0, c1, c2, c3 = st.columns((4,1,1,1))
-        missing_must = r["score"].get("missing_must_tokens", [])
-        badge = ""
-        if missing_must:
-            # hiện tối đa 3 token còn thiếu
-            badge = f"<span style='background:#fde2e1;color:#b42318;padding:2px 6px;border-radius:999px;font-size:11px'>Missing must: {', '.join(missing_must[:3])}{'…' if len(missing_must)>3 else ''}</span>"
-        c0.markdown(f"**{r['filename']}**  {badge}", unsafe_allow_html=True)
-        # show email small
-        c0.caption(", ".join(r["score"]["parsed"].get("emails", [])[:1]) or "")
-        c1.markdown(r["score"]["total_score"])
-        c2.markdown(r["score"]["semantic_score"])
-        c3.markdown(f"{r['score']['parsed'].get('jd_match_ratio', 0.0)*100:.1f}%")
+        s = r["score"]
+        missing_must = s.get("missing_must", [])
+        exp_short = ""
+        if not s.get("exp_match", True):
+            exp_short = f"req {s.get('exp_required',0)}y, has {s.get('exp_years_estimated',0)}y"
 
-        with c0.expander("Details / Preview"):
-            st.write("Estimated years:", r["score"]["exp_years_estimated"])
+        data.append({
+            "Candidate": r["filename"],
+            "Total": s.get("total_score", 0),
+            "Semantic": s.get("semantic_score", 0),
+            "JD Match %": f"{s['parsed'].get('jd_match_ratio',0.0)*100:.1f}%",
+            "Exp (years)": s.get("exp_years_estimated", 0),
+            "Missing Must": ", ".join(missing_must[:3]) + ("…" if len(missing_must) > 3 else ""),
+            "Exp Short": exp_short,
+            "Email": ";".join(s["parsed"].get("emails", [])[:1])
+        })
 
-            # skill hit tokens (multi-lang)
-            st.write("Must-hit skills (tokens):", r["score"].get("must_hit_tokens", []))
-            st.write("Nice-hit skills (tokens):", r["score"].get("nice_hit_tokens", []))
+    df = pd.DataFrame(data)
+    st.dataframe(df, use_container_width=True)
 
-            st.write("Emails:", r["score"]["parsed"].get("emails", []))
-            st.write("Phones:", r["score"]["parsed"].get("phones", []))
-
-            # Top dòng CV khớp nội dung JD
-            top_lines = r["score"].get("content_top_matches", [])
-            if top_lines:
-                st.markdown("**Top CV lines matching JD content:**")
-                for m in top_lines:
-                    st.markdown(f"- _{m['line']}_  → **{m['match_ratio']*100:.1f}%**  *(match: {', '.join(m['matched_words'])})*")
-
-            st.markdown("---")
-            # highlight các kỹ năng JD trong preview (dựa trên danh sách raw để dễ nhìn)
-            preview_terms = list(set(must_have_skills + nice_to_have_skills))
-            highlighted = highlight_terms(r["text"][:2000], preview_terms)
-            st.markdown("<div style='white-space:pre-wrap;'>" + highlighted + "</div>", unsafe_allow_html=True)
-
-    # Download results JSON/CSV
-    out_json = json.dumps(results, ensure_ascii=False, indent=2)
-    st.download_button("📥 Download results JSON", data=out_json, file_name="cv_filter_results.json", mime="application/json")
-
-    import csv
-    from io import StringIO
+    # Download results CSV
     csv_buf = StringIO()
     writer = csv.writer(csv_buf)
     writer.writerow(["filename","total","semantic","kw","exp","exp_years","emails","missing_must","jd_match"])
     for r in results:
         s = r["score"]
         writer.writerow([
-            r["filename"], s["total_score"], s["semantic_score"], s["kw_score"] if "kw_score" in s else "",
-            s["exp_score"] if "exp_score" in s else "", s["exp_years_estimated"],
-            ";".join(s["parsed"].get("emails", [])), ";".join(s.get("missing_must", [])),
+            r["filename"], s.get("total_score", 0), s.get("semantic_score", 0),
+            s.get("kw_score", ""), s.get("exp_score", ""),
+            s.get("exp_years_estimated", 0),
+            ";".join(s["parsed"].get("emails", [])),
+            ";".join(s.get("missing_must", [])),
             f"{s['parsed'].get('jd_match_ratio',0.0)*100:.1f}%"
         ])
-    st.download_button("📥 Download results CSV", data=csv_buf.getvalue().encode("utf-8"), file_name="cv_filter_results.csv", mime="text/csv")
+    st.download_button("📥 Download results CSV",
+                       data=csv_buf.getvalue().encode("utf-8"),
+                       file_name="cv_filter_results.csv", mime="text/csv")
 
-    # Danh sách hợp lệ — yêu cầu: score >= THRESHOLD, exp >= min_ex, đủ must-have, JD match >= JD_MATCH_THRESHOLD
+    # --- Top CV hợp lệ ---
     valid_results = [
         r for r in results
         if r["score"]["total_score"] >= THRESHOLD
@@ -595,24 +663,30 @@ if results:
 
     if valid_results:
         st.markdown(f"### ✅ Top CV hợp lệ — {len(valid_results)} ứng viên")
-        valid_list_str = "\n".join(
-            [f"- {r['filename']} (score={r['score']['total_score']})" for r in valid_results]
-        )
-        st.text(valid_list_str)
+
+        valid_data = []
+        for r in valid_results:
+            s = r["score"]
+            valid_data.append({
+                "Candidate": r["filename"],
+                "Total": s.get("total_score", 0),
+                "Semantic": s.get("semantic_score", 0),
+                "JD Match %": f"{s['parsed'].get('jd_match_ratio',0.0)*100:.1f}%",
+                "Exp (years)": s.get("exp_years_estimated", 0),
+                "Email": ";".join(s["parsed"].get("emails", [])[:1]),
+            })
+
+        df_valid = pd.DataFrame(valid_data)
+        st.dataframe(df_valid, use_container_width=True)
+
+        # Export TXT danh sách hợp lệ
+        csv_buf = io.StringIO()
+        df_valid.to_csv(csv_buf, index=False, encoding="utf-8-sig")
         st.download_button(
-            "📥 Download danh sách hợp lệ (.txt)",
-            data=valid_list_str,
-            file_name="top_cv_hople.txt",
-            mime="text/plain"
+            "📥 Download danh sách hợp lệ (.csv)",
+            data=csv_buf.getvalue(),
+            file_name="top_cv_hople.csv",
+            mime="text/csv"
         )
     else:
         st.warning("Không có CV nào hợp lệ ")
-
-# Notes & next steps
-st.sidebar.markdown("---")
-st.sidebar.markdown(
-    "**Gợi ý:** Nếu dữ liệu cực lớn (hàng chục nghìn CV), hãy build chỉ mục FAISS cho embeddings CV,\n"
-    "tìm top-k gần JD trước rồi mới chấm điểm chi tiết để tăng tốc. FAISS tăng tốc — không thay đổi độ chính xác."
-)
-
-
