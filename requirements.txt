@@ -33,7 +33,6 @@ spacy==3.7.5   # bản mới nhất support Python 3.13
 # Vietnamese NLP
 # ------------------------
 # Nếu môi trường có git:
-git+https://github.com/trungtv/pyvi.git
 # Nếu không có git thì thay bằng:
 # pyvi
 
