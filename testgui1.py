@@ -21,6 +21,10 @@ import re
 import spacy
 from typing import List, Dict, Any
 import base64
+import json
+import csv
+from io import StringIO
+import pandas as pd
 # embeddings
 try:
     from sentence_transformers import SentenceTransformer, util
@@ -605,10 +609,50 @@ if run_button:
 
 # Show results table
 # import pandas as pd
-import json
-import csv
-from io import StringIO
-import pandas as pd
+import streamlit.components.v1 as components
+
+def show_pdf(file_bytes):
+    """Hiển thị PDF trên Streamlit Cloud"""
+    b64 = base64.b64encode(file_bytes).decode("utf-8")
+    pdf_display = f"""
+    <embed src="data:application/pdf;base64,{b64}" 
+           width="700" height="900" type="application/pdf">
+    """
+    components.html(pdf_display, height=900)
+
+def get_selected_rows(grid_response):
+    """Xử lý selected_rows an toàn"""
+    selected_rows = grid_response.get("selected_rows", [])
+    if isinstance(selected_rows, pd.DataFrame):
+        selected_rows = selected_rows.to_dict("records")
+    elif isinstance(selected_rows, dict):
+        selected_rows = [selected_rows]
+    return selected_rows
+
+def render_cv_viewer(selected_rows, candidates):
+    """Hiển thị CV khi click vào tên"""
+    if selected_rows:
+        selected = selected_rows[0]
+        filename = selected["Candidate"]
+
+        cv_entry = next((c for c in candidates if c["filename"] == filename), None)
+        if cv_entry:
+            ext = filename.split(".")[-1].lower()
+            content = cv_entry["bytes"]
+
+            st.markdown(f"**Hiển thị CV: {filename}**")
+
+            if ext == "pdf":
+                show_pdf(content)
+            elif ext in ("png", "jpg", "jpeg"):
+                st.image(content, caption=filename, use_column_width=True)
+            elif ext in ("docx", "doc"):
+                st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
+            else:
+                st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
+        else:
+            st.warning("File CV này không tìm thấy trong session.")
+
 results = st.session_state.get("results", [])
 if results:
     st.subheader("Top candidates")
@@ -648,34 +692,36 @@ if results:
     )
 
     # Lấy file CV từ session_state.candidates khi click tên
-    selected_rows = grid_response.get("selected_rows", [])
-    if hasattr(selected_rows, "to_dict"):
-        selected_rows = selected_rows.to_dict("records")
+    # selected_rows = grid_response.get("selected_rows", [])
+    # if hasattr(selected_rows, "to_dict"):
+    #     selected_rows = selected_rows.to_dict("records")
 
-    if selected_rows:
-        selected = selected_rows[0]
-        filename = selected["Candidate"]
-        st.write(f"**Selected Candidate:** {filename}")
+    # if selected_rows:
+    #     selected = selected_rows[0]
+    #     filename = selected["Candidate"]
+    #     st.write(f"**Selected Candidate:** {filename}")
 
-        cv_entry = next((c for c in st.session_state.candidates if c["filename"] == filename), None)
-        if cv_entry:
-            ext = filename.split(".")[-1].lower()
-            content = cv_entry["bytes"]
+    #     cv_entry = next((c for c in st.session_state.candidates if c["filename"] == filename), None)
+    #     if cv_entry:
+    #         ext = filename.split(".")[-1].lower()
+    #         content = cv_entry["bytes"]
 
-            if ext == "pdf":
-                # Hiển thị PDF trực tiếp
-                b64 = base64.b64encode(content).decode()
-                pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
-                st.markdown(pdf_display, unsafe_allow_html=True)
-            elif ext in ("docx", "doc"):
-                # Hiển thị text trích xuất từ DOC/DOCX
-                st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
-            elif ext in ("png", "jpg", "jpeg"):
-                st.image(content, caption=filename)
-            else:
-                st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
-        else:
-            st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
+    #         if ext == "pdf":
+    #             # Hiển thị PDF trực tiếp
+    #             b64 = base64.b64encode(content).decode()
+    #             pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
+    #             st.markdown(pdf_display, unsafe_allow_html=True)
+    #         elif ext in ("docx", "doc"):
+    #             # Hiển thị text trích xuất từ DOC/DOCX
+    #             st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
+    #         elif ext in ("png", "jpg", "jpeg"):
+    #             st.image(content, caption=filename)
+    #         else:
+    #             st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
+    #     else:
+    #         st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
+    selected_rows = get_selected_rows(grid_response)
+    render_cv_viewer(selected_rows, st.session_state.candidates)
     # Download results CSV
     csv_buf = StringIO()
     writer = csv.writer(csv_buf)
@@ -736,38 +782,40 @@ if results:
     )
 
     # Lấy row được chọn
-    selected_rows = grid_response.get("selected_rows", [])
-    if hasattr(selected_rows, "to_dict"):
-        selected_rows = selected_rows.to_dict("records")
+    # selected_rows = grid_response.get("selected_rows", [])
+    # if hasattr(selected_rows, "to_dict"):
+    #     selected_rows = selected_rows.to_dict("records")
 
-    if selected_rows:
-        selected = selected_rows[0]
-        filename = selected["Candidate"]
+    # if selected_rows:
+    #     selected = selected_rows[0]
+    #     filename = selected["Candidate"]
 
-        # Lấy CV từ session_state
-        cv_entry = next((c for c in st.session_state.candidates if c["filename"] == filename), None)
-        if cv_entry:
-            ext = filename.split(".")[-1].lower()
-            content = cv_entry["bytes"]
+    #     # Lấy CV từ session_state
+    #     cv_entry = next((c for c in st.session_state.candidates if c["filename"] == filename), None)
+    #     if cv_entry:
+    #         ext = filename.split(".")[-1].lower()
+    #         content = cv_entry["bytes"]
 
-            st.markdown(f"**Hiển thị CV: {filename}**")
+    #         st.markdown(f"**Hiển thị CV: {filename}**")
 
-            if ext == "pdf":
-                b64 = base64.b64encode(content).decode()
-                pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
-                st.markdown(pdf_display, unsafe_allow_html=True)
+    #         if ext == "pdf":
+    #             b64 = base64.b64encode(content).decode()
+    #             pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
+    #             st.markdown(pdf_display, unsafe_allow_html=True)
 
-            elif ext in ("png", "jpg", "jpeg"):
-                st.image(content, caption=filename, use_column_width=True)
+    #         elif ext in ("png", "jpg", "jpeg"):
+    #             st.image(content, caption=filename, use_column_width=True)
 
-            elif ext in ("docx", "doc"):
-                # Hiển thị text trích xuất từ DOC/DOCX
-                st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
+    #         elif ext in ("docx", "doc"):
+    #             # Hiển thị text trích xuất từ DOC/DOCX
+    #             st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
 
-            else:
-                st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
-        else:
-            st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
+    #         else:
+    #             st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
+    #     else:
+    #         st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
+    selected_rows = get_selected_rows(grid_response)
+    render_cv_viewer(selected_rows, st.session_state.candidates)
 
     # Export CSV danh sách hợp lệ
     csv_buf = io.StringIO()
