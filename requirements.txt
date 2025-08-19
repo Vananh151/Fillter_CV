@@ -5,14 +5,14 @@ streamlit==1.29.0
 rich==14.1.0
 markdown-it-py==4.0.0
 mdurl==0.1.2
-st-aggrid==0.4.28  # thêm nếu bạn dùng AgGrid
+st-aggrid==0.4.28
 
 # ------------------------
 # Data processing
 # ------------------------
 numpy==1.26.1
 pandas==2.1.1
-python-dotenv==1.1.1
+python-dotenv==1.0.1   # 1.1.1 không tồn tại, bản stable là 1.0.1
 
 # ------------------------
 # File handling
@@ -32,10 +32,15 @@ spacy==3.6.1
 # ------------------------
 # Vietnamese NLP
 # ------------------------
+# Nếu môi trường có git:
 git+https://github.com/trungtv/pyvi.git
+# Nếu không có git thì thay bằng dòng sau (ít tính năng hơn):
+# pyvi==0.1.1
 
 # ------------------------
 # Machine Learning / PyTorch
 # ------------------------
-torch==2.6.0+cpu
--f https://download.pytorch.org/whl/torch_stable.html
+torch==2.4.1+cpu
+torchvision==0.19.1+cpu
+torchaudio==2.4.1+cpu
+-f https://download.pytorch.org/whl/cpu/torch_stable.html
