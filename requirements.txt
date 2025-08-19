@@ -1,11 +1,11 @@
 # ------------------------
 # Streamlit & UI
 # ------------------------
-streamlit==1.29.0
+streamlit
 rich
 markdown-it-py
 mdurl
-streamlit-aggrid   # ✅ đúng tên
+streamlit-aggrid
 
 # ------------------------
 # Data processing
@@ -32,7 +32,7 @@ spacy
 # ------------------------
 # Vietnamese NLP
 # ------------------------
-pyvi   # tạm dùng bản trên PyPI để tránh lỗi build từ GitHub
+pyvi
 
 # ------------------------
 # Machine Learning / PyTorch
