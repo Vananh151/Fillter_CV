@@ -765,7 +765,7 @@ if results:
 
     # Cấu hình bảng với AgGrid
     gb = GridOptionsBuilder.from_dataframe(df_valid)
-    gb.configure_selection(selection_mode="single", use_checkbox=True)  # chọn 1 row
+    gb.configure_selection(selection_mode="single", use_checkbox=False)  # chọn 1 row
     gridOptions = gb.build()
 
     st.write("### ✅ Top CV hợp lệ")
@@ -818,3 +818,4 @@ if results:
         file_name="top_cv_hople.csv",
         mime="text/csv"
     )
+
