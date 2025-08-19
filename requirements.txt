@@ -1,31 +1,42 @@
+# ------------------------
 # Streamlit & UI
+# ------------------------
 streamlit==1.29.0
 rich
 markdown-it-py
 mdurl
-st-aggrid
+streamlit-aggrid   # ✅ đúng tên
 
+# ------------------------
 # Data processing
+# ------------------------
 numpy
 pandas
 python-dotenv
 
+# ------------------------
 # File handling
+# ------------------------
 python-docx
 pdfplumber
 pillow
 pytesseract
 
+# ------------------------
 # NLP
+# ------------------------
 sentence-transformers
 nltk
 spacy
 
+# ------------------------
 # Vietnamese NLP
-# Tạm thời dùng pyvi trên PyPI thay vì GitHub để tránh lỗi build
-pyvi
+# ------------------------
+pyvi   # tạm dùng bản trên PyPI để tránh lỗi build từ GitHub
 
+# ------------------------
 # Machine Learning / PyTorch
+# ------------------------
 torch
 torchvision
 torchaudio
