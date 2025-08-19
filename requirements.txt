@@ -1,45 +1,31 @@
-# ------------------------
 # Streamlit & UI
-# ------------------------
 streamlit==1.29.0
 rich
 markdown-it-py
 mdurl
 st-aggrid
 
-# ------------------------
 # Data processing
-# ------------------------
 numpy
 pandas
-python-dotenv   # bỏ ghim version, 1.0.1 có thể chưa build cho 3.13
+python-dotenv
 
-# ------------------------
 # File handling
-# ------------------------
 python-docx
 pdfplumber
 pillow
 pytesseract
 
-# ------------------------
 # NLP
-# ------------------------
-sentence-transformers==2.2.2
+sentence-transformers
 nltk
-spacy==3.7.5   # bản mới nhất support Python 3.13
+spacy
 
-# ------------------------
 # Vietnamese NLP
-# ------------------------
-# Nếu môi trường có git:
-# Nếu không có git thì thay bằng:
-# pyvi
+# Tạm thời dùng pyvi trên PyPI thay vì GitHub để tránh lỗi build
+pyvi
 
-# ------------------------
 # Machine Learning / PyTorch
-# ------------------------
-torch==2.4.1
-torchvision==0.19.1
-torchaudio==2.4.1
--f https://download.pytorch.org/whl/cpu/torch_stable.html
+torch
+torchvision
+torchaudio
