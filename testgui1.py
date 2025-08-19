@@ -21,10 +21,6 @@ import re
 import spacy
 from typing import List, Dict, Any
 import base64
-import json
-import csv
-from io import StringIO
-import pandas as pd
 # embeddings
 try:
     from sentence_transformers import SentenceTransformer, util
@@ -548,13 +544,13 @@ if uploaded_files:
         ext = f.name.split(".")[-1].lower()
         text = ""
         try:
-            if ext == ("pdf",):
+            if ext ==("pdf",):
                 text = extract_text_from_pdf_bytes(raw)
             elif ext == ("docx",):
                 text = extract_text_from_docx_bytes(raw)
             elif ext == ("png","jpg","jpeg"):
                 text = extract_text_from_image_bytes(raw)
-            elif ext ==("doc",):
+            elif ext == ("doc",):
                 # .doc cũ => cố gắng decode thô
                 try:
                     text = raw.decode("utf-8", errors="ignore")
@@ -609,6 +605,10 @@ if run_button:
 
 # Show results table
 # import pandas as pd
+import json
+import csv
+from io import StringIO
+import pandas as pd
 results = st.session_state.get("results", [])
 if results:
     st.subheader("Top candidates")
@@ -635,47 +635,89 @@ if results:
 
     df = pd.DataFrame(data)
     gb = GridOptionsBuilder.from_dataframe(df)
+# Cho phép chọn 1 row khi click
     gb.configure_selection(selection_mode="single", use_checkbox=False)
-    gb.configure_columns(["Candidate"], 
-                        cellRenderer='''function(params){return `<b style="color:blue;cursor:pointer">${params.value}</b>`}''')
     gridOptions = gb.build()
 
+    st.write("### Danh sách ứng viên")
     grid_response = AgGrid(
         df,
         gridOptions=gridOptions,
         update_mode=GridUpdateMode.SELECTION_CHANGED,
         allow_unsafe_jscode=True,
+        theme="alpine",
+        height=300,
     )
 
-    # Lấy file CV từ session_state.candidates khi click tên
+    # Lấy row được chọn
     selected_rows = grid_response.get("selected_rows", [])
-    if hasattr(selected_rows, "to_dict"):
-        selected_rows = selected_rows.to_dict("records")
-
     if selected_rows:
         selected = selected_rows[0]
         filename = selected["Candidate"]
-        st.write(f"**Selected Candidate:** {filename}")
+        st.write(f"**Ứng viên được chọn:** {filename}")
 
+        # Tìm CV trong session_state
         cv_entry = next((c for c in st.session_state.candidates if c["filename"] == filename), None)
         if cv_entry:
             ext = filename.split(".")[-1].lower()
             content = cv_entry["bytes"]
 
             if ext == "pdf":
-                # Hiển thị PDF trực tiếp
+                import base64
                 b64 = base64.b64encode(content).decode()
                 pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
-            elif ext in ("docx", "doc"):
-                # Hiển thị text trích xuất từ DOC/DOCX
-                st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
             elif ext in ("png", "jpg", "jpeg"):
-                st.image(content, caption=filename)
+                st.image(content, caption=filename, use_column_width=True)
+            elif ext in ("docx", "doc"):
+                st.text_area(f"Nội dung {filename}", cv_entry["text"], height=500)
             else:
                 st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
         else:
-            st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
+            st.warning("Không tìm thấy CV trong session!")
+    # gb = GridOptionsBuilder.from_dataframe(df)
+    # gb.configure_selection(selection_mode="single", use_checkbox=False)
+    # gb.configure_columns(["Candidate"], 
+    #                     cellRenderer='''function(params){return `<b style="color:blue;cursor:pointer">${params.value}</b>`}''')
+    # gridOptions = gb.build()
+
+    # grid_response = AgGrid(
+    #     df,
+    #     gridOptions=gridOptions,
+    #     update_mode=GridUpdateMode.SELECTION_CHANGED,
+    #     allow_unsafe_jscode=True,
+    # )
+
+    # # Lấy file CV từ session_state.candidates khi click tên
+    # selected_rows = grid_response.get("selected_rows", [])
+    # if hasattr(selected_rows, "to_dict"):
+    #     selected_rows = selected_rows.to_dict("records")
+
+    # if selected_rows:
+    #     selected = selected_rows[0]
+    #     filename = selected["Candidate"]
+    #     st.write(f"**Selected Candidate:** {filename}")
+
+    #     cv_entry = next((c for c in st.session_state.candidates if c["filename"] == filename), None)
+    #     if cv_entry:
+    #         ext = filename.split(".")[-1].lower()
+    #         content = cv_entry["bytes"]
+
+    #         if ext == "pdf":
+    #             # Hiển thị PDF trực tiếp
+    #             b64 = base64.b64encode(content).decode()
+    #             pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
+    #             st.markdown(pdf_display, unsafe_allow_html=True)
+    #         elif ext in ("docx", "doc"):
+    #             # Hiển thị text trích xuất từ DOC/DOCX
+    #             st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
+    #         elif ext in ("png", "jpg", "jpeg"):
+    #             st.image(content, caption=filename)
+    #         else:
+    #             st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
+    #     else:
+    #         st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
+    
     # Download results CSV
     csv_buf = StringIO()
     writer = csv.writer(csv_buf)
@@ -723,23 +765,21 @@ if results:
 
     # Cấu hình bảng với AgGrid
     gb = GridOptionsBuilder.from_dataframe(df_valid)
-    gb.configure_selection(selection_mode="single", use_checkbox=False)
-    gb.configure_columns(["Candidate"],
-                         cellRenderer='''function(params){return `<b style="color:blue;cursor:pointer">${params.value}</b>`}''')
+    gb.configure_selection(selection_mode="single", use_checkbox=True)  # chọn 1 row
     gridOptions = gb.build()
 
+    st.write("### ✅ Top CV hợp lệ")
     grid_response = AgGrid(
         df_valid,
         gridOptions=gridOptions,
         update_mode=GridUpdateMode.SELECTION_CHANGED,
         allow_unsafe_jscode=True,
+        theme="alpine",
+        height=250,
     )
 
-    # Lấy row được chọn
+    # --- Lấy row được chọn ---
     selected_rows = grid_response.get("selected_rows", [])
-    if hasattr(selected_rows, "to_dict"):
-        selected_rows = selected_rows.to_dict("records")
-
     if selected_rows:
         selected = selected_rows[0]
         filename = selected["Candidate"]
@@ -762,14 +802,14 @@ if results:
 
             elif ext in ("docx", "doc"):
                 # Hiển thị text trích xuất từ DOC/DOCX
-                st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
+                st.text_area(f"Nội dung {filename}", cv_entry["text"], height=500)
 
             else:
                 st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
         else:
             st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
 
-    # Export CSV danh sách hợp lệ
+    # --- Export CSV danh sách hợp lệ ---
     csv_buf = io.StringIO()
     df_valid.to_csv(csv_buf, index=False, encoding="utf-8-sig")
     st.download_button(
@@ -778,6 +818,3 @@ if results:
         file_name="top_cv_hople.csv",
         mime="text/csv"
     )
-
-else:
-    st.warning("Không có CV nào hợp lệ")
