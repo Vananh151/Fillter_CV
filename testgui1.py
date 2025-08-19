@@ -662,43 +662,28 @@ if results:
             ext = filename.split(".")[-1].lower()
             content = cv_entry["bytes"]
 
-            # if ext == "pdf":
-            #     # Hiển thị PDF trực tiếp
-            #     b64 = base64.b64encode(content).decode()
-            #     pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
-            #     st.markdown(pdf_display, unsafe_allow_html=True)
-            # elif ext in ("docx", "doc"):
-            #     # Hiển thị text trích xuất từ DOC/DOCX
-            #     st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
-            # elif ext in ("png", "jpg", "jpeg"):
-            #     st.image(content, caption=filename)
-            # else:
-            #     st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
             if ext == "pdf":
-    # Cho phép tải xuống PDF
+    # Cho phép tải về PDF
                 st.download_button(
-                label=f"📄 Download {filename}",
-                data=content,
-                file_name=filename,
-                mime="application/pdf"
-            )
+                    label=f"📄 Download {filename}",
+                    data=content,
+                    file_name=filename,
+                    mime="application/pdf"
+                )
 
-            # Thêm link mở PDF sang tab mới
-                try:
-                    b64 = base64.b64encode(content).decode()
-                    pdf_link = f'<a href="data:application/pdf;base64,{b64}" target="_blank">📖 Open {filename} in new tab</a>'
-                    st.markdown(pdf_link, unsafe_allow_html=True)
-                except Exception:
-                    st.warning("Không thể mở PDF trực tiếp, hãy tải về để xem.")
+                # Link mở sang tab mới
+                b64 = base64.b64encode(content).decode()
+                pdf_link = f'<a href="data:application/pdf;base64,{b64}" target="_blank">📖 Open {filename} in new tab</a>'
+                st.markdown(pdf_link, unsafe_allow_html=True)
+
             elif ext in ("docx", "doc"):
-                # Hiển thị text trích xuất từ DOC/DOCX
                 st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
+
             elif ext in ("png", "jpg", "jpeg"):
                 st.image(content, caption=filename, use_column_width=True)
+
             else:
                 st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
-        else:
-            st.warning("File CV này chưa được upload hoặc không tồn tại trong session!")
     # Download results CSV
     csv_buf = StringIO()
     writer = csv.writer(csv_buf)
@@ -775,41 +760,18 @@ if results:
 
             st.markdown(f"**Hiển thị CV: {filename}**")
 
-            # if ext == "pdf":
-            #     b64 = base64.b64encode(content).decode()
-            #     pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
-            #     st.markdown(pdf_display, unsafe_allow_html=True)
-
-            # elif ext in ("png", "jpg", "jpeg"):
-            #     st.image(content, caption=filename, use_column_width=True)
-
-            # elif ext in ("docx", "doc"):
-            #     # Hiển thị text trích xuất từ DOC/DOCX
-            #     st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
-
-            # else:
-            #     st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
             if ext == "pdf":
-    # Cho phép tải xuống PDF
-                st.download_button(
-                    label=f"📄 Download {filename}",
-                    data=content,
-                    file_name=filename,
-                    mime="application/pdf"
-                )
+                b64 = base64.b64encode(content).decode()
+                pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
+                st.markdown(pdf_display, unsafe_allow_html=True)
 
-                # Thử hiển thị inline (có thể bị chặn trên Streamlit Cloud nhưng ok ở local)
-                try:
-                    b64 = base64.b64encode(content).decode()
-                    pdf_display = f'<iframe src="data:application/pdf;base64,{b64}" width="700" height="900" type="application/pdf"></iframe>'
-                    st.markdown(pdf_display, unsafe_allow_html=True)
-                except Exception:
-                    st.warning("Không thể hiển thị PDF trực tiếp, hãy tải về để xem.")
+            elif ext in ("png", "jpg", "jpeg"):
+                st.image(content, caption=filename, use_column_width=True)
+
             elif ext in ("docx", "doc"):
                 # Hiển thị text trích xuất từ DOC/DOCX
                 st.text_area(f"Content of {filename}", cv_entry["text"], height=500)
-            elif ext in ("png", "jpg", "jpeg"):
-                st.image(content, caption=filename, use_column_width=True)
+
             else:
                 st.warning("Không hỗ trợ loại file này để mở trực tiếp!")
         else:
