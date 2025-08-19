@@ -1,6 +1,9 @@
-poppler-utils
 tesseract-ocr
-libmagic1
-libxml2-dev
-libxslt-dev
+libtesseract-dev
+poppler-utils
 build-essential
+gcc
+g++
+make
+libffi-dev
+libssl-dev
